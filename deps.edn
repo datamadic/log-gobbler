@@ -1,3 +1,4 @@
-{:deps { org.clojure/core.async {:mvn/version "0.4.474"}
-        org.clojure/data.json {:mvn/version "0.2.6"}}}
-{:paths ["src"]}
+{:deps {org.clojure/core.async {:mvn/version "0.4.474"}
+        org.clojure/data.json {:mvn/version "0.2.6"}
+        org.clojure/spec.alpha {:mvn/version "0.2.176"}}
+ :paths ["src"]}

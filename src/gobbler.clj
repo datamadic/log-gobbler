@@ -1,5 +1,6 @@
 (ns gobbler
-  (:require [clojure.data.json :as json])
+  (:require [clojure.data.json :as json]
+            [clojure.spec.alpha :as s])
   (:gen-class))
 
 ;; (println *command-line-args*)
@@ -12,14 +13,11 @@
 (defn make-es
   ([ln] (make-es ln {}))
   ([ln meta]
-   (if-let [timestamp (re-find ts-reg ln)] 
+   (if-let [timestamp (re-find ts-reg ln)]
      (do (println "{\"index\":{}}")
-         (println (json/write-str (merge meta {
-                                               :timestamp timestamp
-                                               :message ln
-                                               })))))))
+         (println (json/write-str (merge meta {:timestamp timestamp
+                                               :message ln})))))))
 
-;; get the las here
 (def meta-info-matchers
   {:command_line_args #"Command Line: (.*)"
    :manifest #"--startup-url=(.*?)(?: [\-]{0,2}|$)"
@@ -30,63 +28,49 @@
    :adapter_version #"adapter\": \"(.*)\""
    :electron_version #"electron\": \"(.*)\""})
 
-
-;; "http_parser": "2.7.0",
-;; "node": "8.9.3",
-;; "v8": "6.1.534.41",
-;; "uv": "1.15.0",
-;; "zlib": "1.2.11",
-;; "ares": "1.10.1-DEV",
-;; "modules": "57",
-;; "nghttp2": "1.25.0",
-;; "openssl": "1.0.2n",
-;; "openfin": "9.61.38.27",
-;; "chrome": "61.0.3163.100",
-;; "adapter": "6f9b2c3dc47b376dbb1572ff6573fecefdca409e",
-;; "core": "252627ef3a772d5ab37b03a2da604eb109a588e7",
-;; "electron": "2.0.7"
-
-;; accretion of values with reduce.. 
+;; accretion of values with reduce..
 
 
 
 ;; (map (fn [[x]] x) meta-info-matchers)
 
-(defrecord meta-info-reduce-seed [matched matchers])
-(defn meta-info-reducer [{matched :matched matchers :matchers } line]
+;; (defrecord meta-info-reduce-seed [matched matchers])
+
+;; bail out with reduced if all matched, return the matches
+(defn meta-info-reducer [[matched  matchers] line]
   ;; (println matched)
   ;;   (println line)
-  (->meta-info-reduce-seed (into {} (map (fn [[k v]]
-                                   (if (nil? v)
-                                     [k (last (re-find (k matchers) line))]
-                                     [k v]))
-                                 matched))
-                           matchers))
+  [(into {} (map (fn [[k v]]
+                   (if (nil? v)
+                     [k (last (re-find (k matchers) line))]
+                     [k v]))
+                 matched))
+   matchers])
 
 (defn -main [& stuff]
   (let [[infile outfile] stuff
 
         ;; change the uuid to a hash of the file
         log-uuid (.toString (java.util.UUID/randomUUID))
-        meta "foo"]
+        [meta]  (with-open [rdr (clojure.java.io/reader infile)]
 
-    (with-open [rdr (clojure.java.io/reader infile)]
-      
-      (clojure.pprint/pprint (:matched (reduce meta-info-reducer
-                        (->meta-info-reduce-seed (into {}
-                                                       (map vector
-                                                            (keys meta-info-matchers)
-                                                            (repeat (count meta-info-matchers) nil)))
-                                                 meta-info-matchers)
-                        (line-seq rdr))))
-      )
+                        (reduce meta-info-reducer
+                                [(into {}
+                                       (map vector
+                                            (keys meta-info-matchers)
+                                            (repeat (count meta-info-matchers) nil)))
+                                 meta-info-matchers]
+                                (line-seq rdr))
+                        )]
+
+
 
     ;; (println meta )
-    (System/exit 0)
+    ;; (System/exit 0)
 
     (with-open [rdr (clojure.java.io/reader infile)]
       (doseq  [ln  (line-seq rdr)]
-        (make-es ln (merge {}  {:log-uuid log-uuid})))
+        (make-es ln (merge meta  {:log-uuid log-uuid})))
       (println ""))))
 
 ;; (get (into {} (map vector lst (repeat (count lst) "waka"))) 2)
@@ -98,7 +82,7 @@
 ;; curl -XPOST "http://localhost:9200/logs/_doc/_bulk?pretty" -H 'Content-Type: application/json' --data-binary @lines.json
 ;; (defn uuid [] (.toString (java.util.UUID/randomUUID)))
 
-
+;; clojure.pprint/pprint
 
 ;; dorun, doall, and doseq are all for forcing lazy sequences, presumably to get side effects.
 

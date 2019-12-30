@@ -2,8 +2,15 @@
   (:require [clojure.data.json :as json]
             [clojure.spec.alpha :as s])
   (:gen-class))
+;; should make it handle both log formats (1/2/3 vs 1-2-3)
+(def v14-wtl "[2019-12-30 11:30:02.653]-[VERBOSE1:atom_api_app.cc(1541)] received in-runtime: 1 [OpenfinPOC]-[OpenfinPOC] {\"action\":\"write-to-log\",\"isSync\":false,\"payload\":{\"level\":\"info\",\"message\":\"[licenseKey] [OpenfinPOC - OpenfinPOC]: invalid OpenFin license key\"},\"singleFrameOnly\":true}")
+(def v14-animate "[2019-12-30 11:30:34.588]-[VERBOSE1:atom_api_app.cc(1541)] received in-runtime: 14 [OpenfinPOC]-[queueCounter] {\"action\":\"animate-window\",\"payload\":{\"name\":\"queueCounter\",\"transitions\":{\"position\":{\"duration\":300,\"left\":1130,\"top\":870}},\"uuid\":\"OpenfinPOC\"}}")
 
-(def ts-reg #"\d+\/\d+\/\d+ \d+:\d+:\d+")
+
+
+(def ts-reg-v10 #"\d+\/\d+\/\d+ \d+:\d+:\d+") ;; unused
+(def ts-reg-v14 #"(\d+\-\d+\-\d+ \d+:\d+:\d+(?:\.\d+)?)")
+(def message-v14 #"(?:\d+\-\d+\-\d+ \d+:\d+:\d+(?:\.\d+)?)(.*)")
 (def meta-info-matchers
   {:command_line_args #"Command Line: (.*)"
    :manifest #"--startup-url=(.*?)(?: [\-]{0,2}|$)"
@@ -17,12 +24,12 @@
 ;; build these as strings??
 ;; make key an array of terms to line up with multiple capture groups??
 (def info-matchers
-  {:timestamp #"(\d+\/\d+\/\d+ \d+:\d+:\d+)"
+  {:timestamp ts-reg-v14
    :app #"received in-runtime: \d+ \[(.*?)]"
    :win #"received in-runtime: \d+ \[(?:.*?)]-\[(.*?)]"
    :frame_id #"received in-runtime: (\d+)"
    :action #"received in-runtime: \d+ \[(?:.*?)]-\[(?:.*?)] \{\"action\":\"(.*?)\""
-   :message #"(?:\d+\/\d+\/\d+ \d+:\d+:\d+)]-(.*)"})
+   :message #"(.*)"})
 (def empty-index "{\"index\":{}}")
 
 (defn nil-map [m]
@@ -34,7 +41,7 @@
         :args (s/cat :m map?)
         :ret map?)
 
-(defn map-map [f m] (into {} (map (fn [[k v]] [k (f v)]) m)))
+(defn map-map [f m] (into {} (map (fn [[k v]] [k (f v)]) m))) ;; unused
 
 ;; this should not do the printing...
 ;; extract the (into {} (map ... ))

@@ -3,21 +3,7 @@
             [clojure.spec.alpha :as s])
   (:gen-class))
 
-;; (println *command-line-args*)
-
-;; reduce to catch the last got log
-;; write in the dir the mappings
-
 (def ts-reg #"\d+\/\d+\/\d+ \d+:\d+:\d+")
-
-(defn make-es
-  ([ln] (make-es ln {}))
-  ([ln meta]
-   (if-let [timestamp (re-find ts-reg ln)]
-     (do (println "{\"index\":{}}")
-         (println (json/write-str (merge meta {:timestamp timestamp
-                                               :message ln})))))))
-
 (def meta-info-matchers
   {:command_line_args #"Command Line: (.*)"
    :manifest #"--startup-url=(.*?)(?: [\-]{0,2}|$)"
@@ -28,24 +14,48 @@
    :adapter_version #"adapter\": \"(.*)\""
    :electron_version #"electron\": \"(.*)\""})
 
-;; accretion of values with reduce..
+;; build these as strings??
+;; make key an array of terms to line up with multiple capture groups??
+(def info-matchers
+  {:timestamp #"(\d+\/\d+\/\d+ \d+:\d+:\d+)"
+   :app #"received in-runtime: \d+ \[(.*?)]"
+   :win #"received in-runtime: \d+ \[(?:.*?)]-\[(.*?)]"
+   :frame_id #"received in-runtime: (\d+)"
+   :action #"received in-runtime: \d+ \[(?:.*?)]-\[(?:.*?)] \{\"action\":\"(.*?)\""
+   :message #"(?:\d+\/\d+\/\d+ \d+:\d+:\d+)]-(.*)"})
+(def empty-index "{\"index\":{}}")
+
+(defn nil-map [m]
+  (into {}
+        (map vector
+             (keys m)
+             (repeat (count m) nil))))
+(s/fdef nil-map
+        :args (s/cat :m map?)
+        :ret map?)
+
+(defn map-map [f m] (into {} (map (fn [[k v]] [k (f v)]) m)))
+
+;; this should not do the printing...
+;; extract the (into {} (map ... ))
+(defn make-es
+  ([ln] (make-es ln {}))
+  ([ln meta]
+   (let [fields (into {} (map (fn [[k v]] [k (last (re-find v ln))]) info-matchers))]
+     (if (not (nil? (:timestamp fields)))
+         (do (println empty-index)
+             (println (json/write-str (merge meta fields))))))))
 
 
-
-;; (map (fn [[x]] x) meta-info-matchers)
-
-;; (defrecord meta-info-reduce-seed [matched matchers])
-
-;; bail out with reduced if all matched, return the matches
-(defn meta-info-reducer [[matched  matchers] line]
-  ;; (println matched)
-  ;;   (println line)
-  [(into {} (map (fn [[k v]]
-                   (if (nil? v)
-                     [k (last (re-find (k matchers) line))]
-                     [k v]))
-                 matched))
-   matchers])
+(defn meta-info-reducer [[matched  matchers :as reduction] line]
+  (if (every? (fn [[_ v]] v) matched)
+    (reduced reduction)
+    [(into {} (map (fn [[k v]]
+                     (if (nil? v)
+                       [k (last (re-find (k matchers) line))]
+                       [k v]))
+                   matched))
+     matchers]))
 
 (defn -main [& stuff]
   (let [[infile outfile] stuff
@@ -53,31 +63,35 @@
         ;; change the uuid to a hash of the file
         log-uuid (.toString (java.util.UUID/randomUUID))
         [meta]  (with-open [rdr (clojure.java.io/reader infile)]
-
-                        (reduce meta-info-reducer
-                                [(into {}
-                                       (map vector
-                                            (keys meta-info-matchers)
-                                            (repeat (count meta-info-matchers) nil)))
-                                 meta-info-matchers]
-                                (line-seq rdr))
-                        )]
-
-
-
-    ;; (println meta )
-    ;; (System/exit 0)
+                  (reduce meta-info-reducer
+                          [(nil-map meta-info-matchers) meta-info-matchers]
+                          (line-seq rdr)))]
 
     (with-open [rdr (clojure.java.io/reader infile)]
       (doseq  [ln  (line-seq rdr)]
         (make-es ln (merge meta  {:log-uuid log-uuid})))
       (println ""))))
 
+
+
+
+
+
+
+
+
+
+
+
+
+;; looked up times... 
+
+;; (System/exit 0)
 ;; (get (into {} (map vector lst (repeat (count lst) "waka"))) 2)
 
-(def t "[11/20/18 10:58:57]-[INFO:atom_api_app.cc(1203)] 11/20 10:58:57.261 - group-policy build: true")
-(re-find #"\d+\/\d+\/\d+ \d+:\d+:\d+" t)
-(re-find #"(VERBOSE|VERBOSE1|INFO|ERROR|WARNING):.*\]" t)
+;; (def t "[11/20/18 10:58:57]-[INFO:atom_api_app.cc(1203)] 11/20 10:58:57.261 - group-policy build: true")
+;; (re-find #"\d+\/\d+\/\d+ \d+:\d+:\d+" t)
+;; (re-find #"(VERBOSE|VERBOSE1|INFO|ERROR|WARNING):.*\]" t)
 ;; ["INFO:atom_api_app.cc(1203)]" "INFO"]
 ;; curl -XPOST "http://localhost:9200/logs/_doc/_bulk?pretty" -H 'Content-Type: application/json' --data-binary @lines.json
 ;; (defn uuid [] (.toString (java.util.UUID/randomUUID)))
@@ -102,3 +116,8 @@
 ;; clj -m gobbler "/Users/Admin/Downloads/Logs Diego/New Compressed (zipped) Folder/debugl181121104643.log" > lines.json
 
 ;; [01/02/2019 15:33:27]-[VERBOSE1:atom_main_delegate.cc(306)] Command Line: --v=1 --inspect --startup-url=http://localhost:3449/app.json --framestrategy=frames --no-sandbox --disabled-frame-groups --process-log-file=debugp099030.log
+
+;; To have launchd start grafana now and restart at login:
+;; brew services start grafana
+;; Or, if you don't want/need a background service you can just run:
+;; grafana-server --config=/usr/local/etc/grafana/grafana.ini --homepath /usr/local/share/grafana cfg:default.paths.logs=/usr/local/var/log/grafana cfg:default.paths.data=/usr/local/var/lib/grafana cfg:default.paths.plugins=/usr/local/var/lib/grafana/plugins
